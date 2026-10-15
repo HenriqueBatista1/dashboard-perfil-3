@@ -1,3 +1,4 @@
+
 """Comparações por grupo, sem alterar a base original."""
 
 import pandas as pd
@@ -5,9 +6,17 @@ import plotly.graph_objects as go
 import streamlit as st
 
 
+# --------------------------------------------------
+# CORES E CONFIGURAÇÕES
+# --------------------------------------------------
+
 INK = "#263b34"
 GREEN = "#2d7053"
 
+
+# --------------------------------------------------
+# RESUMOS ESTATÍSTICOS
+# --------------------------------------------------
 
 def sleep_summary(data):
     """Calcula média de sono e quantidade de respostas válidas."""
@@ -22,6 +31,7 @@ def sleep_summary(data):
 
 def fatigue_summary(data, threshold):
     """Calcula a proporção que atinge o corte em cada grupo."""
+
     valid = data.dropna(
         subset=["Cansaco_Durante_Dia_1a5"]
     ).copy()
@@ -46,8 +56,13 @@ def fatigue_summary(data, threshold):
     return result
 
 
+# --------------------------------------------------
+# ESTILO PADRÃO DOS GRÁFICOS
+# --------------------------------------------------
+
 def style_figure(fig, height):
     """Aplica o estilo comum aos gráficos."""
+
     fig.update_layout(
         template="plotly_white",
         height=height,
@@ -70,8 +85,13 @@ def style_figure(fig, height):
     return fig
 
 
+# --------------------------------------------------
+# GRÁFICO 1: SONO MÉDIO POR CURSO
+# --------------------------------------------------
+
 def sleep_chart(summary, threshold):
     """Barras horizontais ordenadas da menor para a maior média."""
+
     fig = go.Figure(
         go.Bar(
             x=summary["media"],
@@ -99,7 +119,6 @@ def sleep_chart(summary, threshold):
         threshold,
     ) * 1.18
 
-    # O eixo começa em zero para não exagerar as diferenças.
     fig.update_xaxes(
         title="Horas por noite",
         range=[0, upper],
@@ -127,8 +146,13 @@ def sleep_chart(summary, threshold):
     )
 
 
+# --------------------------------------------------
+# GRÁFICO 2: CANSAÇO POR CURSO E PERÍODO
+# --------------------------------------------------
+
 def fatigue_chart(summary, courses, periods):
     """Matriz de cansaço com escala sequencial em verde."""
+
     values = summary.pivot(
         index="Curso",
         columns="Periodo_Curso",
@@ -160,7 +184,6 @@ def fatigue_chart(summary, courses, periods):
         for i in range(len(courses))
     ]
 
-    # A intensidade aumenta com o percentual de cansaço.
     colorscale = [
         [0.00, "#f0f5f1"],
         [0.25, "#c6ddcc"],
@@ -175,7 +198,6 @@ def fatigue_chart(summary, courses, periods):
             x=periods,
             y=courses,
             customdata=details,
-            # Limites fixos para manter a comparação entre recortes.
             zmin=0,
             zmax=100,
             colorscale=colorscale,
@@ -200,7 +222,6 @@ def fatigue_chart(summary, courses, periods):
         )
     )
 
-    # Rótulos permitem a leitura sem depender apenas das cores.
     for i, course in enumerate(courses):
         for j, period in enumerate(periods):
             value = values.iloc[i, j]
@@ -249,13 +270,166 @@ def fatigue_chart(summary, courses, periods):
     )
 
 
+# --------------------------------------------------
+# GRÁFICO 3: DISTRIBUIÇÃO DO CANSAÇO POR FAIXA DE SONO
+# --------------------------------------------------
+
+def sleep_fatigue_chart(data, sleep_threshold=7):
+    """Distribuição percentual do cansaço em três faixas de sono."""
+
+    valid = data.dropna(
+        subset=["Horas_Sono", "Cansaco_Durante_Dia_1a5"]
+    ).copy()
+
+    grupos = [
+        f"Menos de {sleep_threshold} h",
+        f"{sleep_threshold} a menos de 8 h",
+        "8 h ou mais",
+    ]
+
+    valid["grupo_sono"] = pd.cut(
+        valid["Horas_Sono"],
+        bins=[
+            float("-inf"),
+            sleep_threshold,
+            8,
+            float("inf"),
+        ],
+        labels=grupos,
+        right=False,
+    )
+
+    valid["nivel"] = valid[
+        "Cansaco_Durante_Dia_1a5"
+    ].astype(int)
+
+    contagem = pd.crosstab(
+        valid["grupo_sono"],
+        valid["nivel"],
+    ).reindex(
+        index=grupos,
+        columns=[1, 2, 3, 4, 5],
+        fill_value=0,
+    )
+
+    totais = contagem.sum(axis=1)
+
+    percentuais = contagem.div(
+        totais.replace(0, float("nan")),
+        axis=0,
+    ) * 100
+
+    cores = [
+        "#b9ddca",  # Nível 1
+        "#7fb99b",  # Nível 2
+        "#24a06b",  # Nível 3
+        "#d7a64a",  # Nível 4
+        "#c95b4a",  # Nível 5
+    ]
+
+    fig = go.Figure()
+
+    for nivel, cor in zip(range(1, 6), cores):
+
+        valores = percentuais[nivel]
+
+        fig.add_trace(
+            go.Bar(
+                x=grupos,
+                y=valores,
+                name=f"Nível {nivel}",
+                marker_color=cor,
+                width=0.28,
+                text=[
+                    f"{valor:.0f}%"
+                    if pd.notna(valor) and valor >= 8
+                    else ""
+                    for valor in valores
+                ],
+                textposition="inside",
+                insidetextanchor="middle",
+                customdata=contagem[nivel],
+                hovertemplate=(
+                    f"<b>Cansaço nível {nivel}</b>"
+                    "<br>Faixa de sono: %{x}"
+                    "<br>Percentual: %{y:.1f}%"
+                    "<br>Estudantes: %{customdata}"
+                    "<extra></extra>"
+                ),
+            )
+        )
+
+    fig.update_layout(
+        barmode="stack",
+        bargap=0.60,
+        legend=dict(
+            title="Nível de cansaço",
+            orientation="h",
+            yanchor="bottom",
+            y=1.05,
+            xanchor="center",
+            x=0.5,
+            traceorder="normal",
+        ),
+        uniformtext_minsize=11,
+        uniformtext_mode="hide",
+    )
+
+    # Quantidade de estudantes abaixo de cada coluna.
+    rotulos = [
+        f"{grupo}<br>(n={int(totais[grupo])})"
+        if totais[grupo] > 0
+        else f"{grupo}<br>(sem respostas)"
+        for grupo in grupos
+    ]
+
+    fig.update_xaxes(
+        title="Duração do sono",
+        tickmode="array",
+        tickvals=grupos,
+        ticktext=rotulos,
+        categoryorder="array",
+        categoryarray=grupos,
+        showgrid=False,
+        zeroline=False,
+    )
+
+    fig.update_yaxes(
+        title="Distribuição dos estudantes (%)",
+        range=[0, 100],
+        ticksuffix="%",
+        dtick=20,
+        gridcolor="#dce5dc",
+        zeroline=False,
+    )
+
+    fig = style_figure(fig, 520)
+
+    # Espaço adicional para os rótulos e a legenda.
+    fig.update_layout(
+        margin=dict(
+            l=10,
+            r=25,
+            t=65,
+            b=75,
+        ),
+    )
+
+    return fig
+
+
+# --------------------------------------------------
+# RENDERIZAÇÃO DOS TRÊS GRÁFICOS
+# --------------------------------------------------
+
 def render_charts(
     data,
     periods,
     sleep_threshold=7,
     fatigue_threshold=3,
 ):
-    """Exibe os dois gráficos com os filtros já aplicados."""
+    """Exibe os três gráficos com os filtros já aplicados."""
+
     st.subheader(
         "Como sono e cansaço se distribuem entre os grupos?"
     )
@@ -265,7 +439,7 @@ def render_charts(
 
     courses = sono["Curso"].tolist()
 
-    # Inclui cursos sem horas de sono válidas, caso existam.
+    # Inclui cursos sem horas de sono válidas.
     courses += sorted(
         set(data["Curso"].dropna()) - set(courses)
     )
@@ -279,6 +453,10 @@ def render_charts(
         for period in periods
         if period in available_periods
     ]
+
+    # ---------------------------------------
+    # GRÁFICO 1: SONO MÉDIO POR CURSO
+    # ---------------------------------------
 
     st.markdown("**Sono médio por curso**")
 
@@ -298,6 +476,10 @@ def render_charts(
             config={"displayModeBar": False},
             key="sono_por_curso",
         )
+
+    # ---------------------------------------
+    # GRÁFICO 2: CANSAÇO POR CURSO E PERÍODO
+    # ---------------------------------------
 
     st.markdown(
         f"**Cansaço de nível {fatigue_threshold} ou mais "
@@ -331,4 +513,47 @@ def render_charts(
             "Grupos pequenos exigem cautela; consulte o tamanho "
             "do grupo ao passar o cursor. "
             "O corte é exploratório, não um diagnóstico."
+        )
+
+    # ---------------------------------------
+    # GRÁFICO 3: DISTRIBUIÇÃO DO CANSAÇO
+    # ---------------------------------------
+
+    st.markdown(
+        "**Distribuição dos níveis de cansaço por duração do sono**"
+    )
+
+    st.caption(
+        "Comparação da distribuição percentual dos níveis de cansaço "
+        "entre estudantes que dormem menos de 7 horas, "
+        "de 7 a menos de 8 horas e 8 horas ou mais. "
+        "Cada coluna representa 100% dos estudantes da respectiva faixa."
+    )
+
+    dados_validos = data.dropna(
+        subset=["Horas_Sono", "Cansaco_Durante_Dia_1a5"]
+    )
+
+    if dados_validos.empty:
+        st.info(
+            "Sem respostas válidas para analisar "
+            "a distribuição do cansaço por duração do sono."
+        )
+    else:
+        st.plotly_chart(
+            sleep_fatigue_chart(
+                dados_validos,
+                sleep_threshold,
+            ),
+            width="stretch",
+            config={"displayModeBar": False},
+            key="relacao_sono_cansaco",
+        )
+
+        st.caption(
+            "Os percentuais consideram apenas respostas válidas "
+            "de sono e cansaço. Passe o cursor sobre as colunas "
+            "para consultar a quantidade de estudantes em cada nível. "
+            "Faixas sem respostas não apresentam percentuais. "
+            "As associações observadas não estabelecem causalidade."
         )
