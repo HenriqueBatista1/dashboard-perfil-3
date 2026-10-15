@@ -69,4 +69,6 @@ streamlit run src/app.py
 
 O Streamlit mostrará no terminal o endereço local para abrir no navegador, normalmente `http://localhost:8501`.
 
-**Estado atual:** `src/app.py` está vazio; portanto, o comando acima ainda não apresenta o dashboard. A instalação prepara o ambiente para o desenvolvimento da aplicação.
+**Estado atual:** `src/app.py` apresenta a estrutura inicial do painel, com filtros por curso e período e indicadores-resumo. Os gráficos ainda serão desenvolvidos em `src/plots.py`.
+
+O carregamento da planilha está isolado em `src/data_loader.py`. A função `load_data()` lê a aba `Dados` sem alterar os valores originais.
